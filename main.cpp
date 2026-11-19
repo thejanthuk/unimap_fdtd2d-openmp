@@ -217,7 +217,7 @@ int main(int argc, char **argv)
 	std::fseek(file, 0, SEEK_END);
 	if (std::ftell(file) == 0)
 		std::fprintf(file,
-				"cells,steps,threads,init_s,compute_s,rms_error\n");
+				"cells,steps,threads,init_s,compute_s,rms_error,ez_center\n");
 	std::fprintf(file, "%d,%d,%d,%.12f,%.12f,%.12e,%.12f\n",
 			point_n - 1, timestep_n, threads, init_s, comp_s,
 			rms_error, ez_center);

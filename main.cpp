@@ -119,10 +119,12 @@ int main(int argc, char **argv)
 	
 	double init_end = now();
 
-	double comp_beg = now();
-
+	/*
 	if (out_freq > 0)
 		write_csv("field_0000.csv", ez, hx, hy, point_n, delta_x, delta_y);
+	*/
+
+	double comp_beg = now();
 
 #pragma omp parallel
 {

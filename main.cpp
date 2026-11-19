@@ -10,13 +10,45 @@
 
 using real = double;
 
+constexpr real pi = 3.14159265358979323846L;
+
 static double now()
 {
 	return std::chrono::duration<double>(
 		     std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
-constexpr real pi = 3.14159265358979323846L;
+static void write_csv(const char *path, const real *ez,
+											const real *hx, const real *hy,
+										  int point_n, real dx, real dy)
+{
+	FILE *f = std::fopen(path, "w");
+	if (!f) {
+		std::perror(path);
+		return;
+	}
+
+	std::fprintf(f, "x,y,z,hx,hy,ez\n");
+
+	const int last = point_n - 1;
+	for (int j = 0; j < point_n; j++) {
+		for (int i = 0; i < point_n; i++) {
+			const int k = i * point_n + j;
+
+			const real hx_n = (j == 0)    ? hx[k + 1]
+			                : (j == last) ? hx[k]
+			                : 0.5 * (hx[k] + hx[k + 1]);
+			const real hy_n = (i == 0)    ? hy[k + point_n]
+			                : (i == last) ? hy[k]
+			                : 0.5 * (hy[k] + hy[k + point_n]);
+
+			std::fprintf(f, "%.12g,%.12g,0,%.12g,%.12g,%.12g\n",
+			                i * dx, j * dy, hx_n, hy_n, ez[k]);
+		}
+	}
+
+	std::fclose(f);
+}
 
 int main(int argc, char **argv)
 {
@@ -32,6 +64,8 @@ int main(int argc, char **argv)
 #ifdef _OPENMP
 	omp_set_num_threads(std::atoi(argv[4]));
 #endif
+
+	const int out_freq = (n + 9) / 10;
 
 	const real delta_x = length / (n * 2);
 	const real delta_y = length / (n * 2);
@@ -87,6 +121,9 @@ int main(int argc, char **argv)
 
 	double comp_beg = now();
 
+	if (out_freq > 0)
+		write_csv("field_0000.csv", ez, hx, hy, point_n, delta_x, delta_y);
+
 #pragma omp parallel
 {
 	for (int t = 0; t < timestep_n; t++) {
@@ -115,6 +152,19 @@ int main(int argc, char **argv)
 																     - hx[i * point_n + j]);
 			}
 		}
+
+		/*
+		if (out_freq > 0 && (t + 1) % out_freq == 0) {
+#pragma omp single
+{
+			char name[64];
+			std::snprintf(name, sizeof name, "field_%04d.csv",
+					(t + 1) / out_freq);
+
+			write_csv(name, ez, hx, hy, point_n, delta_x, delta_y);
+} // #pragma omp single
+		}
+		*/
 	}
 } // #pragma omp parallel
 
@@ -173,27 +223,7 @@ int main(int argc, char **argv)
 	std::fclose(file);
 
 	/*
-	FILE *result = std::fopen("result.csv", "w");
-	std::fprintf(result, "x,y,z,hx,hy,ez\n");
-	for (int j = 0; j < point_n; j++) {
-		for (int i = 0; i < point_n; i++) {
-			const int k = i * point_n + j;
-
-			const real hx_n = (j == 0) ? hx[k + 1]
-									    : (j == point_n - 1) ? hx[k]
-											: 0.5 * (hx[k] + hx[k + 1]);
-			const real hy_n = (i == 0) ? hy[k + point_n]
-									    : (i == point_n - 1) ? hy[k]
-											: 0.5 * (hy[k] + hy[k + point_n]);
-
-			const real x = i * delta_x;
-			const real y = j * delta_y;
-
-			std::fprintf(result, "%.12g,%.12g,%.12g,%.12g,%.12g,%.12g\n",
-													 x, y, 0.0, hx_n, hy_n, ez[k]);
-		}
-	}
-	std::fclose(result);
+	write_csv("result.csv", ez, hx, hy, point_n, delta_x, delta_y);
 	*/
 
 	std::free(hx);

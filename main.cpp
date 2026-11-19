@@ -218,8 +218,9 @@ int main(int argc, char **argv)
 	if (std::ftell(file) == 0)
 		std::fprintf(file,
 				"cells,steps,threads,init_s,compute_s,rms_error\n");
-	std::fprintf(file, "%d,%d,%d,%.12f,%.12f,%.12e\n",
-			point_n - 1, timestep_n, threads, init_s, comp_s, rms_error);
+	std::fprintf(file, "%d,%d,%d,%.12f,%.12f,%.12e,%.12f\n",
+			point_n - 1, timestep_n, threads, init_s, comp_s,
+			rms_error, ez_center);
 	std::fclose(file);
 
 	/*

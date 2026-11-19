@@ -1,7 +1,20 @@
+#include <chrono>
+
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 
+#ifdef _OPENMP
+	#include <omp.h>
+#endif
+
 using real = double;
+
+static double now()
+{
+	return std::chrono::duration<double>(
+		     std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 
 constexpr real pi = 3.14159265358979323846L;
 
@@ -15,6 +28,10 @@ int main(int argc, char **argv)
 	const int timestep_n = std::atoi(argv[2]);
 
 	const real stable_coeff = std::atof(argv[3]);
+
+#ifdef _OPENMP
+	omp_set_num_threads(std::atoi(argv[4]));
+#endif
 
 	const real delta_x = length / (n * 2);
 	const real delta_y = length / (n * 2);
@@ -30,6 +47,8 @@ int main(int argc, char **argv)
 	real *hx = (real *) std::calloc(point_n * point_n, sizeof *hx);
 	real *hy = (real *) std::calloc(point_n * point_n, sizeof *hy);
 	real *ez = (real *) std::calloc(point_n * point_n, sizeof *ez);
+
+	double init_beg = now();
 
 #pragma omp parallel
 {
@@ -63,6 +82,10 @@ int main(int argc, char **argv)
 		}
 	}
 } // #pragma omp parallel
+	
+	double init_end = now();
+
+	double comp_beg = now();
 
 #pragma omp parallel
 {
@@ -94,6 +117,88 @@ int main(int argc, char **argv)
 		}
 	}
 } // #pragma omp parallel
+
+	double comp_end = now();
+
+	double init_s = init_end - init_beg;
+	double comp_s = comp_end - comp_beg;
+
+#ifdef _OPENMP
+	const int threads = omp_get_max_threads();
+#else
+	const int threads = 1;
+#endif
+
+	std::fprintf(stderr, "[init]: %.12f\n", init_s);
+	std::fprintf(stderr, "[comp]: %.12f\n", comp_s);
+
+	const real t_end = timestep_n * delta_t;
+	const real cos_wt = std::cos(omega * t_end);
+
+	real sum_sq = 0;
+
+  #pragma omp parallel for schedule(static) reduction(+ : sum_sq)
+	for (int i = 1; i < point_n - 1; i++) {
+		for (int j = 1; j < point_n - 1; j++) {
+			real x = i * delta_x;
+			real y = j * delta_y;
+
+			real exact = std::sin(pi * x) * std::sin(pi * y) * cos_wt;
+
+			real diff = ez[i * point_n + j] - exact;
+
+			sum_sq += diff * diff;
+		}
+	}
+
+	const int interior_n = (point_n - 2) * (point_n - 2);
+	const real rms_error = std::sqrt(sum_sq / interior_n);
+
+	const real ez_center = ez[n * point_n + n];
+	const real exact_center = cos_wt;
+
+	std::printf("grid         : %d x %d cells (n = %d)\n", 2 * n, 2 * n, n);
+	std::printf("dx, dt       : %g, %g (Courant c*dt/dx = %g)\n", delta_x, delta_t, delta_t / delta_x);
+	std::printf("time steps   : %d, t = %.6f\n", timestep_n, t_end);
+	std::printf("Ez(0.5, 0.5) : %.12f (exact %.12f)\n", ez_center, exact_center);
+	std::printf("RMS error    : %.12e (interior nodes)\n", rms_error);
+
+	FILE *file = std::fopen("run.csv", "a");
+	std::fseek(file, 0, SEEK_END);
+	if (std::ftell(file) == 0)
+		std::fprintf(file,
+				"cells,steps,threads,init_s,compute_s,rms_error\n");
+	std::fprintf(file, "%d,%d,%d,%.12f,%.12f,%.12e\n",
+			point_n - 1, timestep_n, threads, init_s, comp_s, rms_error);
+	std::fclose(file);
+
+	/*
+	FILE *result = std::fopen("result.csv", "w");
+	std::fprintf(result, "x,y,z,hx,hy,ez\n");
+	for (int j = 0; j < point_n; j++) {
+		for (int i = 0; i < point_n; i++) {
+			const int k = i * point_n + j;
+
+			const real hx_n = (j == 0) ? hx[k + 1]
+									    : (j == point_n - 1) ? hx[k]
+											: 0.5 * (hx[k] + hx[k + 1]);
+			const real hy_n = (i == 0) ? hy[k + point_n]
+									    : (i == point_n - 1) ? hy[k]
+											: 0.5 * (hy[k] + hy[k + point_n]);
+
+			const real x = i * delta_x;
+			const real y = j * delta_y;
+
+			std::fprintf(result, "%.12g,%.12g,%.12g,%.12g,%.12g,%.12g\n",
+													 x, y, 0.0, hx_n, hy_n, ez[k]);
+		}
+	}
+	std::fclose(result);
+	*/
+
+	std::free(hx);
+	std::free(hy);
+	std::free(ez);
 
 	return 0;
 }

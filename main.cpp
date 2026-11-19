@@ -1,10 +1,18 @@
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <omp.h>
 
 using real = double;
 
 constexpr real pi = 3.14159265358979323846L;
+
+//Wall-clock time in seconds (steady_clock ticks every 0.1 us, omp_get_wtime only every 1 ms with MinGW)
+double wall_time()
+{
+	return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 
 //Write Ez as x,y,z (z = Ez) for ParaView, overwriting the file if it exists
 void write_csv(const char *filename, const real *ez, int point_n, real delta_x, real delta_y)
@@ -52,6 +60,9 @@ int main(int argc, char **argv)
 	real *hy = (real *)std::calloc(point_n * point_n, sizeof *hy);
 	real *ez = (real *)std::calloc(point_n * point_n, sizeof *ez);
 
+	//Start timing (computation only)
+	double time_start = wall_time();
+
 	/*Initailize the array*/
 #pragma omp parallel
 	{
@@ -92,8 +103,12 @@ int main(int argc, char **argv)
 		}
 	} // #pragma omp parallel
 
-	//Initial Ez (t = 0)
+	double compute_time = wall_time() - time_start;
+
+	//Initial Ez (t = 0), not timed
 	write_csv("ez_initial.csv", ez, point_n, delta_x, delta_y);
+
+	time_start = wall_time();
 
 	//FDTD
 #pragma omp parallel
@@ -155,13 +170,17 @@ int main(int argc, char **argv)
 	const int interior_n = (point_n - 2) * (point_n - 2);
 	const real rms_error = std::sqrt(sum_sq / interior_n);
 
+	compute_time += wall_time() - time_start;
+
+	std::printf("version      : openmp, %d threads\n", omp_get_max_threads());
 	std::printf("grid         : %d x %d cells (n = %d)\n", 2 * n, 2 * n, n);
 	std::printf("dx, dt       : %g, %g (Courant c*dt/dx = %g)\n", delta_x, delta_t, delta_t / delta_x);
 	std::printf("time steps   : %d, t = %.6f\n", timestep_n, t_end);
 	std::printf("Ez(0.5, 0.5) : %.6f (exact %.6f)\n", ez_center, exact_center);
 	std::printf("RMS error    : %.4e (interior nodes)\n", rms_error);
+	std::printf("compute time : %.7f s\n", compute_time);
 
-	//Final Ez (t = timestep_n * delta_t)
+	//Final Ez (t = timestep_n * delta_t), not timed
 	write_csv("ez_final.csv", ez, point_n, delta_x, delta_y);
 
 	std::free(hx);
